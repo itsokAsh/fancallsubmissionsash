@@ -5,8 +5,8 @@ interface SessionInterests {
 }
 
 interface WatchEvent {
-  videoId: string | number;
-  creatorId: string | number;
+  videoId: number;
+  creatorId: number;
   category: string;
   dwellPercent: number;
   timestamp: number;

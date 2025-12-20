@@ -1,16 +1,23 @@
 import { useNavigate } from "react-router-dom";
-import { Clock, Users, Loader2 } from "lucide-react";
-import { useCreators, CreatorWithCategory } from "@/hooks/useCreators";
+import { Clock, Users } from "lucide-react";
 
 const ScoringDashboard = () => {
   const navigate = useNavigate();
-  const { data: creators, isLoading } = useCreators();
+
+  // Phase 4: Updated mock data with availability slots
+  const mockCreators = [
+    { id: 1, name: "Creator A", category: "Fitness", baseScore: 85, isAvailableNow: true, availableSlots: 5, isFavorite: false },
+    { id: 2, name: "Creator B", category: "Music", baseScore: 72, isAvailableNow: false, availableSlots: 0, isFavorite: true },
+    { id: 3, name: "Creator C", category: "Finance", baseScore: 90, isAvailableNow: true, availableSlots: 3, isFavorite: true },
+    { id: 4, name: "Creator D", category: "Gaming", baseScore: 65, isAvailableNow: false, availableSlots: 0, isFavorite: false },
+    { id: 5, name: "Creator E", category: "Tech", baseScore: 78, isAvailableNow: true, availableSlots: 2, isFavorite: false },
+    { id: 6, name: "Creator F", category: "Comedy", baseScore: 82, isAvailableNow: true, availableSlots: 4, isFavorite: false },
+  ];
 
   // Similar creators for substitute recommendations
-  const getSubstitutes = (category: string, excludeId: string, allCreators: CreatorWithCategory[]) => {
-    return allCreators
-      .filter(c => c.category === category && c.id !== excludeId && 
-        (c.status === 'Live' || c.status === 'Online') && c.available_slots > 0)
+  const getSubstitutes = (category: string, excludeId: number) => {
+    return mockCreators
+      .filter(c => c.category === category && c.id !== excludeId && c.isAvailableNow && c.availableSlots > 0)
       .slice(0, 3);
   };
 
@@ -19,21 +26,6 @@ const ScoringDashboard = () => {
     const availabilityMultiplier = isAvailableNow ? 1.5 : 0.8;
     return Math.round(baseScore * availabilityMultiplier);
   };
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-muted flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  // Transform creators to add base score (simulated from pricing/trending)
-  const creatorsWithScores = (creators || []).map(c => ({
-    ...c,
-    baseScore: Math.min(100, Math.floor(50 + (c.video_call_price_inr / 2) + (c.is_trending ? 20 : 0))),
-    isAvailableNow: c.status === 'Live' || c.status === 'Online',
-  }));
 
   return (
     <div className="min-h-screen bg-muted p-4">
@@ -78,16 +70,15 @@ const ScoringDashboard = () => {
 
       {/* Creator Scoring List */}
       <div className="space-y-3">
-        {creatorsWithScores
+        {mockCreators
           .sort((a, b) => 
             calculateFinalScore(b.baseScore, b.isAvailableNow) - 
             calculateFinalScore(a.baseScore, a.isAvailableNow)
           )
-          .slice(0, 20)
           .map((creator, index) => {
             const finalScore = calculateFinalScore(creator.baseScore, creator.isAvailableNow);
             const availabilityMultiplier = creator.isAvailableNow ? 1.5 : 0.8;
-            const substitutes = !creator.isAvailableNow ? getSubstitutes(creator.category, creator.id, creators || []) : [];
+            const substitutes = !creator.isAvailableNow ? getSubstitutes(creator.category, creator.id) : [];
             
             return (
               <div
@@ -98,13 +89,11 @@ const ScoringDashboard = () => {
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <span className="text-lg font-bold text-muted-foreground">#{index + 1}</span>
-                    <img 
-                      src={creator.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${creator.profile?.name}`}
-                      alt={creator.profile?.name}
-                      className="w-10 h-10 rounded-full border border-border"
-                    />
+                    <div className="w-10 h-10 border-2 border-dashed border-border flex items-center justify-center text-xs">
+                      [Av]
+                    </div>
                     <div>
-                      <p className="font-medium">[{creator.profile?.name}]</p>
+                      <p className="font-medium">[{creator.name}]</p>
                       <p className="text-xs text-muted-foreground">[{creator.category}]</p>
                     </div>
                   </div>
@@ -119,9 +108,9 @@ const ScoringDashboard = () => {
                         [UNAVAILABLE]
                       </span>
                     )}
-                    {creator.is_trending && (
-                      <span className="text-xs border border-dashed border-orange-500 text-orange-500 px-2 py-0.5">
-                        [🔥]
+                    {creator.isFavorite && (
+                      <span className="text-xs border border-dashed border-red-500 text-red-500 px-2 py-0.5">
+                        [♥]
                       </span>
                     )}
                   </div>
@@ -149,7 +138,7 @@ const ScoringDashboard = () => {
                       {availabilityMultiplier}x
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      [{creator.available_slots} slots]
+                      [{creator.availableSlots} slots]
                     </p>
                   </div>
                   <div className="border-2 border-dashed border-primary p-2 bg-primary/5">
@@ -174,8 +163,8 @@ const ScoringDashboard = () => {
                           key={sub.id}
                           className="flex-1 border border-dashed border-green-500/50 bg-green-500/5 p-2 text-center"
                         >
-                          <p className="text-xs font-medium">[{sub.profile?.name}]</p>
-                          <p className="text-xs text-green-600">{sub.available_slots} slots open</p>
+                          <p className="text-xs font-medium">[{sub.name}]</p>
+                          <p className="text-xs text-green-600">{sub.availableSlots} slots open</p>
                         </div>
                       ))}
                     </div>

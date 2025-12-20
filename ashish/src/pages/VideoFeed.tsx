@@ -1,22 +1,30 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Heart, ChevronUp, ChevronDown, User, X, Check, Eye, EyeOff, TrendingUp, Clock, Loader2 } from "lucide-react";
+import { Heart, ChevronUp, ChevronDown, User, X, Check, Eye, EyeOff, TrendingUp, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import BottomNav from "@/components/BottomNav";
 import { useFanSession } from "@/context/FanSessionContext";
-import { useCreators, CreatorWithCategory } from "@/hooks/useCreators";
+
+// Expanded mock data for all phases
+const MOCK_CREATORS = [
+  { id: 1, videoId: 101, name: "John Fitness", category: "Fitness", status: "Live", videoPrice: 5, audioPrice: 3, availableSlots: 5, isTrending: false },
+  { id: 2, videoId: 102, name: "Sarah Tech", category: "Tech", status: "Online", videoPrice: 8, audioPrice: 5, availableSlots: 3, isTrending: false },
+  { id: 3, videoId: 103, name: "Mike Gaming", category: "Gaming", status: "Busy", videoPrice: 4, audioPrice: 2, availableSlots: 0, isTrending: false },
+  { id: 4, videoId: 104, name: "Lisa Music", category: "Music", status: "Live", videoPrice: 6, audioPrice: 4, availableSlots: 2, isTrending: true },
+  { id: 5, videoId: 105, name: "Tom Finance", category: "Finance", status: "Online", videoPrice: 10, audioPrice: 7, availableSlots: 4, isTrending: false },
+  { id: 6, videoId: 106, name: "Emma Comedy", category: "Comedy", status: "Online", videoPrice: 5, audioPrice: 3, availableSlots: 6, isTrending: false },
+  { id: 7, videoId: 107, name: "Alex Cooking", category: "Cooking", status: "Live", videoPrice: 7, audioPrice: 4, availableSlots: 1, isTrending: true },
+  { id: 8, videoId: 108, name: "Maya Fashion", category: "Fashion", status: "Busy", videoPrice: 9, audioPrice: 6, availableSlots: 0, isTrending: false },
+];
 
 type BookingStep = "closed" | "select" | "confirm" | "success";
 
 const VideoFeed = () => {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [favorites, setFavorites] = useState<string[]>([]);
+  const [favorites, setFavorites] = useState<number[]>([]);
   const [bookingStep, setBookingStep] = useState<BookingStep>("closed");
   const [selectedCallType, setSelectedCallType] = useState<"video" | "audio">("video");
   const navigate = useNavigate();
-  
-  // Fetch creators from database
-  const { data: dbCreators, isLoading, error } = useCreators();
   
   // Phase 2: Dwell timer state
   const [watchStartTime, setWatchStartTime] = useState<number>(Date.now());
@@ -42,12 +50,12 @@ const VideoFeed = () => {
   } = useFanSession();
 
   // Determine which creators to show based on categories
-  const getOrderedCreators = (creators: CreatorWithCategory[]) => {
-    let ordered = [...creators];
+  const getOrderedCreators = () => {
+    let creators = [...MOCK_CREATORS];
     
     // Phase 1: Sort by category match
     if (userCategories.length > 0) {
-      ordered.sort((a, b) => {
+      creators.sort((a, b) => {
         const aMatch = userCategories.includes(a.category) ? 1 : 0;
         const bMatch = userCategories.includes(b.category) ? 1 : 0;
         return bMatch - aMatch;
@@ -56,37 +64,34 @@ const VideoFeed = () => {
     
     // Phase 3: If we should pivot, re-sort by session interests
     if (Object.keys(sessionInterests).length > 0) {
-      ordered.sort((a, b) => {
+      creators.sort((a, b) => {
         const aInterest = sessionInterests[a.category] || 0;
         const bInterest = sessionInterests[b.category] || 0;
         return bInterest - aInterest;
       });
     }
     
-    return ordered;
+    return creators;
   };
 
-  const orderedCreators = dbCreators ? getOrderedCreators(dbCreators) : [];
+  const orderedCreators = getOrderedCreators();
   const creator = orderedCreators[currentIndex];
   
   // Check if current video is outside user's categories (exploration)
-  const isExplorationVideo = creator && userCategories.length > 0 && !userCategories.includes(creator.category);
-  const isFullyBooked = creator?.available_slots === 0;
+  const isExplorationVideo = userCategories.length > 0 && !userCategories.includes(creator.category);
+  const isFullyBooked = creator.availableSlots === 0;
 
   // Phase 2: Dwell timer effect
   useEffect(() => {
-    if (!creator) return;
-    
     setWatchStartTime(Date.now());
     setCurrentDwellPercent(0);
     setInterestLogged(false);
     
     // Simulate video duration of 15 seconds
     const videoDuration = 15000;
-    const startTime = Date.now();
     
     dwellTimerRef.current = setInterval(() => {
-      const elapsed = Date.now() - startTime;
+      const elapsed = Date.now() - watchStartTime;
       const percent = Math.min((elapsed / videoDuration) * 100, 100);
       setCurrentDwellPercent(percent);
       
@@ -95,10 +100,10 @@ const VideoFeed = () => {
         setInterestLogged(true);
         updateInterest(creator.category, 1);
         logWatch({
-          videoId: creator.id,
+          videoId: creator.videoId,
           creatorId: creator.id,
           category: creator.category,
-          dwellPercent: Math.round(percent)
+          dwellPercent: percent
         });
       }
     }, 100);
@@ -108,11 +113,9 @@ const VideoFeed = () => {
         clearInterval(dwellTimerRef.current);
       }
     };
-  }, [currentIndex, creator?.id]);
+  }, [currentIndex]);
 
   const handleSwipe = (direction: "up" | "down") => {
-    if (!creator) return;
-    
     const swipeTime = Date.now() - watchStartTime;
     
     // Phase 3: Negative signal for quick swipes (<3 seconds)
@@ -138,7 +141,6 @@ const VideoFeed = () => {
   };
 
   const toggleFavorite = () => {
-    if (!creator) return;
     setFavorites(prev => 
       prev.includes(creator.id) 
         ? prev.filter(id => id !== creator.id)
@@ -162,32 +164,11 @@ const VideoFeed = () => {
   // Phase 3: Handle pivot reset
   useEffect(() => {
     if (shouldPivot) {
+      // Auto-reset after showing message
       const timer = setTimeout(() => resetPivot(), 3000);
       return () => clearTimeout(timer);
     }
   }, [shouldPivot, resetPivot]);
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-muted flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-          <p className="text-sm text-muted-foreground mt-2">Loading creators...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error || !creator) {
-    return (
-      <div className="min-h-screen bg-muted flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-sm text-muted-foreground">No creators found. Please seed the database.</p>
-          <Button onClick={() => navigate("/")} className="mt-4">Go Home</Button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-muted flex flex-col">
@@ -275,7 +256,7 @@ const VideoFeed = () => {
 
         {/* Exploration / Trending / Availability Badges */}
         <div className="absolute top-6 right-6 flex flex-col gap-2">
-          {creator.is_trending && (
+          {creator.isTrending && (
             <div className="flex items-center gap-1 text-xs border border-dashed border-orange-500 bg-orange-500/10 text-orange-600 px-2 py-1">
               <TrendingUp className="h-3 w-3" />
               [🔥 TRENDING]
@@ -310,13 +291,11 @@ const VideoFeed = () => {
         <div className="absolute bottom-24 left-4 right-20">
           <div className="border border-border bg-card/90 p-3">
             <div className="flex items-center gap-2 mb-1">
-              <img 
-                src={creator.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${creator.profile?.name}`}
-                alt={creator.profile?.name}
-                className="w-10 h-10 rounded-full border border-border"
-              />
+              <div className="w-10 h-10 border-2 border-dashed border-border flex items-center justify-center text-xs">
+                [AVT]
+              </div>
               <div>
-                <div className="font-semibold text-foreground">{creator.profile?.name}</div>
+                <div className="font-semibold text-foreground">{creator.name}</div>
                 <div className="flex gap-2 text-xs">
                   <span className="border border-border px-2 py-0.5">[{creator.category}]</span>
                   <span className={`px-2 py-0.5 ${
@@ -327,7 +306,7 @@ const VideoFeed = () => {
                     {creator.status}
                   </span>
                   <span className="text-muted-foreground">
-                    [{creator.available_slots} slots]
+                    [{creator.availableSlots} slots]
                   </span>
                 </div>
               </div>
@@ -460,13 +439,11 @@ const VideoFeed = () => {
               <div className="space-y-4">
                 {/* Creator Info */}
                 <div className="flex items-center gap-3 border border-dashed border-border p-3">
-                  <img 
-                    src={creator.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${creator.profile?.name}`}
-                    alt={creator.profile?.name}
-                    className="w-12 h-12 rounded-full border border-border"
-                  />
+                  <div className="w-12 h-12 border-2 border-dashed border-border flex items-center justify-center text-xs">
+                    [AVT]
+                  </div>
                   <div>
-                    <p className="font-medium">[{creator.profile?.name}]</p>
+                    <p className="font-medium">[{creator.name}]</p>
                     <p className="text-xs text-muted-foreground">[{creator.category}]</p>
                   </div>
                   <span className={`ml-auto text-xs px-2 py-1 ${
@@ -482,7 +459,7 @@ const VideoFeed = () => {
                 <div className="border border-dashed border-primary/50 bg-primary/5 p-2">
                   <p className="text-xs text-primary font-medium">[CONVERSION SOURCE]</p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Video #{creator.id.slice(0, 8)} • Dwell: {Math.round(currentDwellPercent)}%
+                    Video #{creator.videoId} • Dwell: {Math.round(currentDwellPercent)}%
                   </p>
                 </div>
 
@@ -498,7 +475,7 @@ const VideoFeed = () => {
                       <p className="font-medium">[Video Call]</p>
                       <p className="text-xs text-muted-foreground">Face-to-face conversation</p>
                     </div>
-                    <p className="font-bold">₹{creator.video_call_price_inr}/min</p>
+                    <p className="font-bold">${creator.videoPrice}/min</p>
                   </div>
                   <div
                     onClick={() => setSelectedCallType("audio")}
@@ -510,7 +487,7 @@ const VideoFeed = () => {
                       <p className="font-medium">[Audio Call]</p>
                       <p className="text-xs text-muted-foreground">Voice-only conversation</p>
                     </div>
-                    <p className="font-bold">₹{creator.audio_call_price_inr}/min</p>
+                    <p className="font-bold">${creator.audioPrice}/min</p>
                   </div>
                 </div>
 
@@ -533,7 +510,7 @@ const VideoFeed = () => {
                   
                   <div className="flex justify-between">
                     <span>Creator</span>
-                    <span className="font-medium">[{creator.profile?.name}]</span>
+                    <span className="font-medium">[{creator.name}]</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Call Type</span>
@@ -542,21 +519,21 @@ const VideoFeed = () => {
                   <div className="flex justify-between">
                     <span>Rate</span>
                     <span className="font-medium">
-                      ₹{selectedCallType === "video" ? creator.video_call_price_inr : creator.audio_call_price_inr}/min
+                      ${selectedCallType === "video" ? creator.videoPrice : creator.audioPrice}/min
                     </span>
                   </div>
                   
                   <div className="border-t border-dashed border-border pt-3">
                     <div className="flex justify-between text-sm text-muted-foreground">
                       <span>Minimum charge (1 min)</span>
-                      <span>₹{selectedCallType === "video" ? creator.video_call_price_inr : creator.audio_call_price_inr}</span>
+                      <span>${selectedCallType === "video" ? creator.videoPrice : creator.audioPrice}</span>
                     </div>
                   </div>
                 </div>
 
                 {/* Phase 2: Attribution in confirm */}
                 <div className="border border-dashed border-muted-foreground/30 p-2 text-xs text-muted-foreground">
-                  [Attribution: Video #{creator.id.slice(0, 8)} → Booking]
+                  [Attribution: Video #{creator.videoId} → Booking]
                 </div>
 
                 {/* Action Buttons */}
@@ -588,7 +565,7 @@ const VideoFeed = () => {
                 <div>
                   <p className="font-medium text-lg">[Booking Confirmed!]</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Your {selectedCallType} call with {creator.profile?.name} is being connected...
+                    Your {selectedCallType} call with {creator.name} is being connected...
                   </p>
                 </div>
 
@@ -596,7 +573,7 @@ const VideoFeed = () => {
                 <div className="border border-dashed border-border p-3 text-left">
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Creator</span>
-                    <span>[{creator.profile?.name}]</span>
+                    <span>[{creator.name}]</span>
                   </div>
                   <div className="flex justify-between text-sm mt-1">
                     <span className="text-muted-foreground">Type</span>
@@ -604,7 +581,7 @@ const VideoFeed = () => {
                   </div>
                   <div className="flex justify-between text-sm mt-1">
                     <span className="text-muted-foreground">Rate</span>
-                    <span>₹{selectedCallType === "video" ? creator.video_call_price_inr : creator.audio_call_price_inr}/min</span>
+                    <span>${selectedCallType === "video" ? creator.videoPrice : creator.audioPrice}/min</span>
                   </div>
                 </div>
 
@@ -612,7 +589,7 @@ const VideoFeed = () => {
                 <div className="border border-dashed border-primary/50 bg-primary/5 p-3 text-left">
                   <p className="text-xs text-primary font-medium mb-2">[CONVERSION ATTRIBUTION]</p>
                   <div className="text-xs text-muted-foreground space-y-1">
-                    <p>Video ID: #{creator.id.slice(0, 8)}</p>
+                    <p>Video ID: #{creator.videoId}</p>
                     <p>Dwell Time: {Math.round(currentDwellPercent)}%</p>
                     <p>Category: {creator.category}</p>
                     <p>Session Swipes: {swipeCount}</p>
